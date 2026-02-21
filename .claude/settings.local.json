@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"c:\\\\dev\\\\github\\\\entra-secret-watcher\\\\src\"\" 2>/dev/null || find \"c:devgithubentra-secret-watcher\" -type f -name \"*.cs \")",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet list:*)"
+    ]
+  }
+}
