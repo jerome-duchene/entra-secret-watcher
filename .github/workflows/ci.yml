@@ -78,12 +78,25 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+        run: |
+          build_flags=()
+          while IFS= read -r tag;   do [ -n "$tag" ]   && build_flags+=(--tag   "$tag");   done <<< "$TAGS"
+          while IFS= read -r label; do [ -n "$label" ] && build_flags+=(--label "$label"); done <<< "$LABELS"
+
+          for attempt in 1 2 3; do
+            echo "=== Build attempt $attempt/3 ==="
+            if docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --push \
+                "${build_flags[@]}" \
+                --cache-from type=gha \
+                --cache-to type=gha,mode=max \
+                .; then
+              exit 0
+            fi
+            [ "$attempt" -lt 3 ] && echo "Retrying in 90s (MCR rate limit)..." && sleep 90
+          done
+          exit 1
