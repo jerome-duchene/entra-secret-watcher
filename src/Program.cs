@@ -26,11 +26,12 @@ app.MapGet("/health", (IConfiguration config) =>
     });
 });
 
-// Hangfire dashboard (read-only, useful for debugging)
+// Hangfire dashboard (read-only, no auth — container is expected to run in a private network)
 app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     IsReadOnlyFunc = _ => true,
-    DashboardTitle = "Entra Secret Watcher"
+    DashboardTitle = "Entra Secret Watcher",
+    Authorization = []
 });
 
 // Register recurring job

@@ -186,16 +186,6 @@ Test the scanner without sending any notifications:
 
 All detected credentials will be logged to stdout — useful for validating permissions and connectivity before going live.
 
-## 📡 Observability
-
-When OpenTelemetry is enabled, the application emits traces for:
-
-- `EntraSecretWatcher.Scanner` — credential scanning operations
-- `EntraSecretWatcher.Jobs` — Hangfire job execution
-- HTTP client calls to Graph API and notification endpoints
-
-Compatible with any OTLP collector (SigNoz, Jaeger, Grafana Tempo, etc.).
-
 ## 🏗️ Architecture
 
 ```
