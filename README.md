@@ -2,7 +2,8 @@
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
+[![CI](https://github.com/YOUR_USERNAME/entra-secret-watcher/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/entra-secret-watcher/actions/workflows/ci.yml)
 
 A lightweight, self-hosted Docker container that monitors **Microsoft Entra ID** (Azure AD) app registration **secrets and certificates** for expiration, and sends proactive notifications before they expire.
 
@@ -39,7 +40,8 @@ Create an app registration in each tenant you want to monitor:
 |---------------------|---------------------|-------------|
 | **All**             | `Application.Read.All` | Application |
 | **Email**           | `Mail.Send`            | Application |
-| **Teams**           | `ChannelMessage.Send`  | Application |
+
+> **Teams** uses an Incoming Webhook — no additional API permission required.
 
 > **Grant admin consent** after adding the permissions.
 
@@ -51,9 +53,13 @@ Add a client secret (or certificate) and note the value — you'll need it for c
 
 ## 🚀 Quick Start
 
-### 1. Build the image
+### 1. Pull the image (or build locally)
 
 ```bash
+# Pull from GitHub Container Registry
+docker pull ghcr.io/YOUR_USERNAME/entra-secret-watcher:latest
+
+# Or build locally
 docker build -t entra-secret-watcher:latest .
 ```
 
@@ -124,15 +130,14 @@ All settings can be configured via **environment variables** using the .NET `__`
 
 > Requires `Mail.Send` application permission on the app registration.
 
-### Notification — Teams (via Graph API)
+### Notification — Teams (via Incoming Webhook)
 
 | Variable | Description |
 |----------|-------------|
 | `Notification__Teams__Enabled` | `true` / `false` |
-| `Notification__Teams__TeamId` | Microsoft Teams team ID |
-| `Notification__Teams__ChannelId` | Teams channel ID |
+| `Notification__Teams__WebhookUrl` | Incoming Webhook URL from the Teams channel connector |
 
-> Requires `ChannelMessage.Send` application permission on the app registration.
+> No Graph API permission required. Create the webhook in Teams under **Channel → Connectors → Incoming Webhook**.
 
 ### OpenTelemetry (optional)
 
@@ -218,9 +223,51 @@ Compatible with any OTLP collector (SigNoz, Jaeger, Grafana Tempo, etc.).
                           (Graph)   (Graph)
 ```
 
+## 🧪 Development
+
+### Running tests
+
+```bash
+# Unit tests only (fast, no credentials needed)
+dotnet test --filter "Category!=Integration"
+
+# Integration tests (requires real credentials — see below)
+dotnet test --filter "Category=Integration"
+```
+
+Integration tests connect to real external services (Entra ID, Gotify, Teams, email). Configure
+them via [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets):
+
+```bash
+dotnet user-secrets set "Entra:TenantId"                "<guid>"   --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Entra:ClientId"                "<guid>"   --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Entra:ClientSecret"            "<secret>" --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Notification:Gotify:Url"       "https://…" --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Notification:Gotify:Token"     "<token>"  --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Notification:Email:From"       "x@dom.com" --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Notification:Email:To"         "y@dom.com" --project tests/EntraSecretWatcher.Tests/
+dotnet user-secrets set "Notification:Teams:WebhookUrl" "https://…" --project tests/EntraSecretWatcher.Tests/
+```
+
+Integration tests without configured credentials are automatically **skipped** (not failed).
+
+### CI/CD
+
+The project uses GitHub Actions (`.github/workflows/ci.yml`):
+
+- **Every push / PR** → unit tests run automatically
+- **On `v*.*.*` tag** → unit tests + multi-platform Docker image (`linux/amd64`, `linux/arm64`) published to `ghcr.io`
+
+To publish a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ## 🤝 Contributing
 
