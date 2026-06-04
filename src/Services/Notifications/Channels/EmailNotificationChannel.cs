@@ -5,6 +5,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Users.Item.SendMail;
+using Microsoft.Kiota.Authentication.Azure;
+using Microsoft.Kiota.Http.HttpClientLibrary.Middleware;
 using System.Text;
 
 namespace EntraSecretWatcher.Services.Notifications.Channels;
@@ -31,7 +33,14 @@ internal class EmailNotificationChannel(
             _entraOptions.ClientId,
             _entraOptions.ClientSecret);
 
-        var graphClient = new GraphServiceClient(credential);
+        // Disable SDK-level retries: SendMail is not idempotent — a retry after a transient 503/504
+        // sends a duplicate email even though the first request already succeeded server-side.
+        var authProvider = new AzureIdentityAuthenticationProvider(credential, scopes: ["https://graph.microsoft.com/.default"]);
+        var handlers = GraphClientFactory.CreateDefaultHandlers()
+            .Where(h => h is not RetryHandler)
+            .ToList();
+        var httpClient = GraphClientFactory.Create(handlers);
+        var graphClient = new GraphServiceClient(httpClient, authProvider);
         var htmlBody = BuildHtml(result);
 
         var recipients = _emailOptions.To

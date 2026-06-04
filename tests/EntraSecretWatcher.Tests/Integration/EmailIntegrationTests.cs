@@ -8,15 +8,14 @@ namespace EntraSecretWatcher.Tests.Integration;
 [Trait("Category", "Integration")]
 public class EmailIntegrationTests : IntegrationTestBase
 {
-    [SkippableFact(DisplayName = "Email — SendAsync envoie un vrai email via Graph API")]
+    [Fact(DisplayName = "Email — SendAsync envoie un vrai email via Graph API")]
     public async Task SendAsync_SendsRealEmailViaGraphApi()
     {
         var entra = GetOptions<EntraOptions>("Entra");
         var email = GetOptions<EmailOptions>("Notification:Email");
 
-        Skip.If(
-            string.IsNullOrWhiteSpace(entra?.TenantId) || string.IsNullOrWhiteSpace(email?.From),
-            "Email/Entra non configuré (Integration:Entra et Integration:Email requis)");
+        if (string.IsNullOrWhiteSpace(entra?.TenantId) || string.IsNullOrWhiteSpace(email?.From))
+            Xunit.Assert.Skip("Email/Entra non configuré (Integration:Entra et Integration:Email requis)");
 
         var channel = new EmailNotificationChannel(
             Options.Create(new NotificationOptions { Email = email! with { Enabled = true } }),

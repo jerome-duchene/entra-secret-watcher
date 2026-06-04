@@ -106,6 +106,7 @@ public class CredentialScanJobTests
 
         var dispatcher = Substitute.For<NotificationDispatcher>(
             Array.Empty<EntraSecretWatcher.Services.Notifications.Channels.INotificationChannel>(),
+            Options.Create(new WatcherOptions()),
             Substitute.For<ILogger<NotificationDispatcher>>());
 
         var job = new CredentialScanJob(

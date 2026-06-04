@@ -8,11 +8,12 @@ namespace EntraSecretWatcher.Tests.Integration;
 [Trait("Category", "Integration")]
 public class GraphScannerIntegrationTests : IntegrationTestBase
 {
-    [SkippableFact(DisplayName = "Graph — ScanAsync retourne des résultats réels du tenant")]
+    [Fact(DisplayName = "Graph — ScanAsync retourne des résultats réels du tenant")]
     public async Task ScanAsync_ReturnsRealResultFromTenant()
     {
         var entra = GetOptions<EntraOptions>("Entra");
-        Skip.If(string.IsNullOrWhiteSpace(entra?.TenantId), "Entra non configuré (Integration:Entra:TenantId manquant)");
+        if (string.IsNullOrWhiteSpace(entra?.TenantId))
+            Xunit.Assert.Skip("Entra non configuré (Integration:Entra:TenantId manquant)");
 
         var scanner = new GraphCredentialScanner(
             Options.Create(entra!),

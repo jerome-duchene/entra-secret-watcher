@@ -1,13 +1,17 @@
+using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Models;
 using EntraSecretWatcher.Services.Notifications.Channels;
+using Microsoft.Extensions.Options;
 
 namespace EntraSecretWatcher.Services.Notifications;
 
 internal class NotificationDispatcher(
     IEnumerable<INotificationChannel> channels,
+    IOptions<WatcherOptions> options,
     ILogger<NotificationDispatcher> logger)
 {
     private readonly IEnumerable<INotificationChannel> _channels = channels;
+    private readonly WatcherOptions _options = options.Value;
     private readonly ILogger<NotificationDispatcher> _logger = logger;
 
     public virtual async Task DispatchAsync(ScanResult result, CancellationToken ct = default)
@@ -20,17 +24,24 @@ internal class NotificationDispatcher(
             return;
         }
 
-        foreach (var channel in enabledChannels)
+        var batches = _options.GroupedReport
+            ? [result]
+            : result.Credentials.Select(cred => result with { Credentials = [cred] }).ToList();
+
+        foreach (var batch in batches)
         {
-            try
+            foreach (var channel in enabledChannels)
             {
-                _logger.LogInformation("Sending notification via {Channel}", channel.Name);
-                await channel.SendAsync(result, ct);
-                _logger.LogInformation("Notification sent successfully via {Channel}", channel.Name);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send notification via {Channel}", channel.Name);
+                try
+                {
+                    _logger.LogInformation("Sending notification via {Channel}", channel.Name);
+                    await channel.SendAsync(batch, ct);
+                    _logger.LogInformation("Notification sent successfully via {Channel}", channel.Name);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send notification via {Channel}", channel.Name);
+                }
             }
         }
     }
