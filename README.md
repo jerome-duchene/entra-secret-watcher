@@ -20,6 +20,7 @@ A lightweight, self-hosted Docker container that monitors **Microsoft Entra ID**
   - **Generic webhook** — one JSON POST per credential (Jira Automation, n8n, Power Automate…)
 - ⏰ Scheduled scanning via **Hangfire** with built-in dashboard
 - 🧪 **Dry-run mode** — test without sending notifications
+- 📈 **Prometheus metrics** on `/metrics` — Grafana dashboards and alerting
 - 📡 **OpenTelemetry** traces for observability
 - 🐳 Lightweight Alpine-based Docker image (~50MB)
 - 💚 Built-in health check endpoint
@@ -175,6 +176,63 @@ One request is sent **per expiring credential**, regardless of `Watcher__Grouped
 so the receiver is responsible for deduplication (e.g. a Jira Automation rule that looks for an
 existing issue labelled with the `keyId` before creating one).
 
+### Prometheus metrics
+
+Metrics are always exposed on `GET /metrics` (no configuration needed). Scans run on a schedule
+(daily by default) while Prometheus scrapes continuously, so the gauges keep the values of the
+**last scan**. They are empty after a container restart until the next scan.
+
+| Metric | Description |
+|--------|-------------|
+| `esw_credential_days_left{app_name,app_id,type,credential_name}` | Days left before expiration, one series per credential reported by the last scan (negative = expired). Only credentials within `Watcher__ThresholdDays` are reported. |
+| `esw_credentials_expired` | Number of expired credentials found by the last scan |
+| `esw_credentials_expiring_soon` | Number of credentials about to expire found by the last scan |
+| `esw_apps_scanned` | Number of app registrations inspected by the last scan |
+| `esw_last_scan_timestamp_seconds` | Unix timestamp of the last scan attempt |
+| `esw_last_scan_success` | `1` if the last scan succeeded, `0` otherwise |
+
+Prometheus scrape configuration:
+
+```yaml
+scrape_configs:
+  - job_name: entra-secret-watcher
+    scrape_interval: 1m
+    static_configs:
+      - targets: ["esw-contoso:8080"]
+```
+
+Example alert rules:
+
+```yaml
+groups:
+  - name: entra-secret-watcher
+    rules:
+      - alert: EntraCredentialExpiringSoon
+        expr: esw_credential_days_left >= 0 and esw_credential_days_left <= 14
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.type }} '{{ $labels.credential_name }}' of {{ $labels.app_name }} expires in {{ $value }} day(s)"
+
+      - alert: EntraCredentialExpired
+        expr: esw_credential_days_left < 0
+        labels: { severity: critical }
+
+      - alert: EntraSecretWatcherScanMissing
+        expr: time() - esw_last_scan_timestamp_seconds > 2 * 86400
+        labels: { severity: warning }
+        annotations:
+          summary: "No scan for more than 2 days"
+
+      - alert: EntraSecretWatcherScanFailed
+        expr: esw_last_scan_success == 0
+        for: 5m
+        labels: { severity: warning }
+```
+
+> **One ticket per credential instead of a daily notification?** Prometheus Alertmanager
+> deduplicates alerts and can open a ticket once (e.g. with its Jira receiver). Alternatively use the
+> [generic webhook](#notification--generic-webhook) and deduplicate on `credential.keyId` in the receiver.
+
 ### OpenTelemetry (optional)
 
 | Variable | Description | Default |
@@ -210,6 +268,7 @@ See the included `docker-compose.yml` for a complete example.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Health check (returns tenant name and timestamp) |
+| `GET /metrics` | Prometheus metrics (see [Prometheus metrics](#prometheus-metrics)) |
 | `GET /hangfire` | Hangfire dashboard (read-only) |
 
 ## 🧪 Dry-Run Mode
@@ -246,7 +305,10 @@ All detected credentials will be logged to stdout — useful for validating perm
                     ┌──────┘   │   └──────┐
                     ▼          ▼          ▼
                  Gotify    Email      Teams
-                          (Graph)   (Graph)
+                          (Graph)   (Webhook)
+
+   Also: generic webhook (one POST per credential)
+         /metrics scraped by Prometheus
 ```
 
 ## 🧪 Development
@@ -286,10 +348,18 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`):
 
 To publish a release:
 
+1. Move the `[Unreleased]` entries of [CHANGELOG.md](CHANGELOG.md) under a new version heading
+   (e.g. `## [0.4.0] - 2026-12-01`) and commit.
+2. Tag and push:
+
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
+
+The tag triggers the Docker image publication and creates a **GitHub Release** whose notes are
+taken from the matching CHANGELOG section (falling back to auto-generated notes, grouped by
+the labels configured in `.github/release.yml`). See [CHANGELOG.md](CHANGELOG.md) for the history.
 
 ## 📄 License
 
