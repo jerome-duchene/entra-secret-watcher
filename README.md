@@ -20,8 +20,8 @@ A lightweight, self-hosted Docker container that monitors **Microsoft Entra ID**
   - **Generic webhook** — one JSON POST per credential (Jira Automation, n8n, Power Automate…)
 - ⏰ Scheduled scanning via **Hangfire** with built-in dashboard
 - 🧪 **Dry-run mode** — test without sending notifications
-- 📈 **Prometheus metrics** on `/metrics` — Grafana dashboards and alerting
-- 📡 **OpenTelemetry** traces for observability
+- 📈 **Prometheus metrics** on `/metrics` (pull) — Grafana dashboards and alerting
+- 📡 **OpenTelemetry (OTLP push)** of traces, metrics and logs — to Grafana Alloy, an OpenTelemetry Collector, Tempo, Loki…
 - 🐳 Lightweight Alpine-based Docker image (~50MB)
 - 💚 Built-in health check endpoint
 
@@ -178,28 +178,38 @@ existing issue labelled with the `keyId` before creating one).
 
 ### Prometheus metrics
 
-Metrics are always exposed on `GET /metrics` (no configuration needed). Scans run on a schedule
+Metrics are always exposed on `GET /metrics` (no configuration needed) for Prometheus to **scrape**.
+They can also be **pushed** over OTLP, see [OpenTelemetry](#opentelemetry-otlp-push). Scans run on a schedule
 (daily by default) while Prometheus scrapes continuously, so the gauges keep the values of the
 **last scan**. They are empty after a container restart until the next scan.
 
 | Metric | Description |
 |--------|-------------|
-| `esw_credential_days_left{app_name,app_id,type,credential_name}` | Days left before expiration, one series per credential reported by the last scan (negative = expired). Only credentials within `Watcher__ThresholdDays` are reported. |
+| `esw_credential_days_left{app_name,app_id,key_id,type,credential_name}` | Days left before expiration, one series per credential reported by the last scan (negative = expired). Only credentials within `Watcher__ThresholdDays` are reported. |
 | `esw_credentials_expired` | Number of expired credentials found by the last scan |
 | `esw_credentials_expiring_soon` | Number of credentials about to expire found by the last scan |
 | `esw_apps_scanned` | Number of app registrations inspected by the last scan |
 | `esw_last_scan_timestamp_seconds` | Unix timestamp of the last scan attempt |
 | `esw_last_scan_success` | `1` if the last scan succeeded, `0` otherwise |
 
-Prometheus scrape configuration:
+**Every `esw_*` series carries the labels `tenant_name` and `tenant_id`** (from `Entra__TenantName` and
+`Entra__TenantId`). With one container per tenant, this is what lets you filter dashboards and route
+alerts per tenant, whether Prometheus scrapes `/metrics` or the metrics are pushed over OTLP.
+
+> ⚠️ Set a **distinct `Entra__TenantName`** on each container: its default value is `Default`.
+> `tenant_id` always tells tenants apart, but the name is what you will want to read in alerts.
+
+Prometheus scrape configuration (one target per tenant):
 
 ```yaml
 scrape_configs:
   - job_name: entra-secret-watcher
     scrape_interval: 1m
     static_configs:
-      - targets: ["esw-contoso:8080"]
+      - targets: ["esw-contoso:8080", "esw-fabrikam:8080", "esw-northwind:8080"]
 ```
+
+The `instance` label identifies the container; `tenant_name` identifies the tenant.
 
 Example alert rules:
 
@@ -211,7 +221,7 @@ groups:
         expr: esw_credential_days_left >= 0 and esw_credential_days_left <= 14
         labels: { severity: warning }
         annotations:
-          summary: "{{ $labels.type }} '{{ $labels.credential_name }}' of {{ $labels.app_name }} expires in {{ $value }} day(s)"
+          summary: "[{{ $labels.tenant_name }}] {{ $labels.type }} '{{ $labels.credential_name }}' of {{ $labels.app_name }} expires in {{ $value }} day(s)"
 
       - alert: EntraCredentialExpired
         expr: esw_credential_days_left < 0
@@ -221,7 +231,7 @@ groups:
         expr: time() - esw_last_scan_timestamp_seconds > 2 * 86400
         labels: { severity: warning }
         annotations:
-          summary: "No scan for more than 2 days"
+          summary: "[{{ $labels.tenant_name }}] No scan for more than 2 days"
 
       - alert: EntraSecretWatcherScanFailed
         expr: esw_last_scan_success == 0
@@ -233,12 +243,89 @@ groups:
 > deduplicates alerts and can open a ticket once (e.g. with its Jira receiver). Alternatively use the
 > [generic webhook](#notification--generic-webhook) and deduplicate on `credential.keyId` in the receiver.
 
-### OpenTelemetry (optional)
+### OpenTelemetry (OTLP push)
+
+Disabled by default. When enabled, the app **pushes** its telemetry over OTLP, in addition to the
+`/metrics` endpoint (which stays available for Prometheus scraping):
+
+| Signal | Content |
+|--------|---------|
+| **Traces** | Scan job, Graph scan, incoming HTTP requests (except `/health` and `/metrics`) and outgoing HTTP calls |
+| **Metrics** | The `esw_*` metrics above, plus ASP.NET Core and HttpClient metrics |
+| **Logs** | Application logs |
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OpenTelemetry__Enabled` | Enable OTLP tracing | `false` |
-| `OpenTelemetry__Endpoint` | OTLP collector endpoint | `http://localhost:4317` |
+| `OpenTelemetry__Enabled` | Enable the OTLP export | `false` |
+| `OpenTelemetry__Endpoint` | OTLP endpoint. With `HttpProtobuf`, give the base URL (`/v1/traces`, `/v1/metrics`, `/v1/logs` are appended). When empty, the standard `OTEL_EXPORTER_OTLP_*` variables apply | `http://localhost:4317` (gRPC) |
+| `OpenTelemetry__Protocol` | `Grpc` or `HttpProtobuf` | `Grpc` |
+| `OpenTelemetry__ServiceName` | `service.name` resource attribute | `entra-secret-watcher` |
+
+Every signal carries the resource attributes `service.name`, `service.instance.id` (the tenant id, so
+each container is a distinct instance), `tenant.name` and `tenant.id`. The `esw_*` metrics also carry
+`tenant_name` and `tenant_id` as regular labels, so they identify the tenant without any extra
+Alloy configuration. Extra resource attributes can be added with the standard
+`OTEL_RESOURCE_ATTRIBUTES` variable (e.g. `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod`).
+
+#### Example with Grafana Alloy
+
+The application pushes to Alloy, which forwards to Prometheus (metrics), Tempo (traces) and Loki (logs):
+
+```alloy
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  http { endpoint = "0.0.0.0:4318" }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    logs    = [otelcol.exporter.loki.default.input]
+  }
+}
+
+// Metrics → Prometheus (remote write)
+otelcol.exporter.prometheus "default" {
+  // Optional: also turn resource attributes (tenant.name, tenant.id, …) into labels on every series
+  // resource_to_telemetry_conversion = true
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+prometheus.remote_write "default" {
+  endpoint { url = "http://prometheus:9090/api/v1/write" }
+}
+
+// Traces → Tempo
+otelcol.exporter.otlp "tempo" {
+  client { url = "tempo:4317"  tls { insecure = true } }
+}
+
+// Logs → Loki
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.default.receiver]
+}
+loki.write "default" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}
+```
+
+Application side:
+
+```yaml
+environment:
+  OpenTelemetry__Enabled: "true"
+  OpenTelemetry__Endpoint: "http://alloy:4317"
+```
+
+> Prometheus must accept remote write (`--web.enable-remote-write-receiver`).
+> Do not configure both a Prometheus scrape **and** the OTLP push for the same instance: the series
+> would be duplicated. Pick one path per deployment.
 
 ## 🐳 Multi-Tenant Deployment
 
@@ -349,12 +436,12 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`):
 To publish a release:
 
 1. Move the `[Unreleased]` entries of [CHANGELOG.md](CHANGELOG.md) under a new version heading
-   (e.g. `## [0.4.0] - 2026-12-01`) and commit.
+   (e.g. `## [0.5.0] - 2026-12-01`) and commit.
 2. Tag and push:
 
 ```bash
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 The tag triggers the Docker image publication and creates a **GitHub Release** whose notes are

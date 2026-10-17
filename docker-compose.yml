@@ -29,7 +29,8 @@ services:
 
       # OpenTelemetry (optional)
       # OpenTelemetry__Enabled: "true"
-      # OpenTelemetry__Endpoint: "http://signoz:4317"
+      # OpenTelemetry__Endpoint: "http://alloy:4317"
+      # OpenTelemetry__Protocol: "Grpc"   # or HttpProtobuf (base URL, e.g. http://alloy:4318)
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.esw-contoso.rule=Host(`esw-contoso.example.com`)"
