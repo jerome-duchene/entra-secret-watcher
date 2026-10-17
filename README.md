@@ -113,6 +113,8 @@ All settings can be configured via **environment variables** using the .NET `__`
 | `Watcher__CronSchedule` | Hangfire cron expression | `0 8 * * *` (daily 8AM) |
 | `Watcher__DryRun` | Log results without sending notifications | `false` |
 | `Watcher__GroupedReport` | Send one grouped notification | `true` |
+| `Watcher__RunOnStartup` | Also run a scan as soon as the app starts (metrics are available right after a restart) | `false` |
+| `Watcher__ManualTriggerSecret` | Enables `POST /scan` (see [Trigger a scan on demand](#-trigger-a-scan-on-demand)). At least 16 characters; empty disables the endpoint | *(empty)* |
 
 ### Notification — Gotify
 
@@ -359,7 +361,29 @@ See the included `docker-compose.yml` for a complete example.
 |----------|-------------|
 | `GET /health` | Health check (returns tenant name and timestamp) |
 | `GET /metrics` | Prometheus metrics (see [Prometheus metrics](#prometheus-metrics)) |
+| `POST /scan` | Trigger a scan on demand (disabled unless `Watcher__ManualTriggerSecret` is set) |
 | `GET /hangfire` | Hangfire dashboard (read-only) |
+
+## ▶️ Trigger a scan on demand
+
+The Hangfire dashboard is read-only (it has no authentication), so it cannot start a job. To run a scan
+outside the schedule, set a secret and call `POST /scan`:
+
+```bash
+-e Watcher__ManualTriggerSecret="a-long-random-secret"   # at least 16 characters
+```
+
+```bash
+curl -X POST http://localhost:8080/scan -H "X-Scan-Token: a-long-random-secret"
+# 202 Accepted  {"jobId":"3"}
+```
+
+- The scan is queued and runs like a scheduled one (notifications, metrics, `Watcher__DryRun`…). Follow it in the
+  Hangfire dashboard (`/hangfire/jobs/details/<jobId>`).
+- `401` if the header is missing or wrong. Without `Watcher__ManualTriggerSecret`, the endpoint does not exist.
+- Every call queues one more scan: do not expose the endpoint publicly, and combine it with the
+  [dry-run mode](#-dry-run-mode) to test without sending notifications.
+- `Watcher__RunOnStartup=true` additionally runs a scan at every start of the container.
 
 ## 🧪 Dry-Run Mode
 

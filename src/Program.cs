@@ -1,4 +1,5 @@
 using EntraSecretWatcher.Configuration;
+using EntraSecretWatcher.Endpoints;
 using EntraSecretWatcher.Extensions;
 using EntraSecretWatcher.Jobs;
 using EntraSecretWatcher.Services;
@@ -55,5 +56,15 @@ RecurringJob.AddOrUpdate<CredentialScanJob>(
     CredentialScanJob.JobId,
     job => job.ExecuteAsync(),
     watcherOptions.CronSchedule);
+
+// On-demand scan: POST /scan (disabled unless Watcher:ManualTriggerSecret is set)
+app.MapManualScan(watcherOptions);
+
+// Scan right away at startup so that metrics are available before the next cron
+if (watcherOptions.RunOnStartup)
+{
+    app.Services.GetRequiredService<IBackgroundJobClient>()
+        .Enqueue<CredentialScanJob>(job => job.ExecuteAsync());
+}
 
 app.Run();

@@ -19,6 +19,8 @@ services:
       # Watcher
       Watcher__ThresholdDays: "30"
       Watcher__CronSchedule: "0 8 * * *"
+      # Watcher__RunOnStartup: "true"                       # also scan at startup
+      # Watcher__ManualTriggerSecret: "a-long-random-secret"  # enables POST /scan (header X-Scan-Token)
       Watcher__DryRun: "false"
       Watcher__GroupedReport: "true"
 

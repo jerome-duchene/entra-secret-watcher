@@ -28,4 +28,17 @@ internal record WatcherOptions
     /// Send a single grouped notification instead of one per credential.
     /// </summary>
     public bool GroupedReport { get; init; } = true;
+
+    /// <summary>
+    /// Run a scan as soon as the application starts, in addition to the schedule.
+    /// Useful to have metrics right after a restart instead of waiting for the next cron.
+    /// </summary>
+    public bool RunOnStartup { get; init; } = false;
+
+    /// <summary>
+    /// Enables <c>POST /scan</c> to trigger a scan on demand. The caller must send this value in the
+    /// <c>X-Scan-Token</c> header. Empty (default) disables the endpoint.
+    /// </summary>
+    [RegularExpression(@"^$|^.{16,}$", ErrorMessage = "ManualTriggerSecret must be empty (endpoint disabled) or at least 16 characters.")]
+    public string ManualTriggerSecret { get; init; } = string.Empty;
 }

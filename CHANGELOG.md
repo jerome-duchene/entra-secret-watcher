@@ -6,6 +6,15 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-17
+
+### Added
+- **`POST /scan`** to trigger a scan on demand, protected by a secret sent in the `X-Scan-Token` header.
+  Enabled only when `Watcher__ManualTriggerSecret` (at least 16 characters) is set. The Hangfire
+  dashboard stays read-only.
+- **`Watcher__RunOnStartup`** to also run a scan when the application starts, so metrics are
+  available right after a restart instead of waiting for the next cron.
+
 ## [0.4.0] - 2026-10-17
 
 ### Added
@@ -46,6 +55,7 @@ uses [Semantic Versioning](https://semver.org/).
 - README: new sections for metrics (with Prometheus scrape config and alert rules), the webhook
   channel and the release process.
 
-[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.2.1...v0.3.0

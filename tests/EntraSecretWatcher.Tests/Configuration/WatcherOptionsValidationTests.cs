@@ -12,6 +12,31 @@ public class WatcherOptionsValidationTests
         Validate(new WatcherOptions()).Should().BeEmpty();
     }
 
+    [Fact]
+    public void ManualTriggerSecret_Empty_IsValid_EndpointDisabled()
+    {
+        Validate(new WatcherOptions { ManualTriggerSecret = "" }).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ManualTriggerSecret_LongEnough_IsValid()
+    {
+        Validate(new WatcherOptions { ManualTriggerSecret = new string('x', 16) }).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ManualTriggerSecret_TooShort_FailsValidation()
+    {
+        Validate(new WatcherOptions { ManualTriggerSecret = "short" })
+            .Should().ContainSingle(r => r.MemberNames.Contains(nameof(WatcherOptions.ManualTriggerSecret)));
+    }
+
+    [Fact]
+    public void RunOnStartup_IsDisabledByDefault()
+    {
+        new WatcherOptions().RunOnStartup.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
