@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         // Core services
+        services.AddSingleton<ScanMetrics>();
         services.AddScoped<GraphCredentialScanner>();
         services.AddScoped<NotificationDispatcher>();
         services.AddScoped<CredentialScanJob>();

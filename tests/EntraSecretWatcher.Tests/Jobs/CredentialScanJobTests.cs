@@ -112,6 +112,7 @@ public class CredentialScanJobTests
         var job = new CredentialScanJob(
             scanner,
             dispatcher,
+            new ScanMetrics(new Prometheus.CollectorRegistry()),
             watcherOpts,
             Substitute.For<ILogger<CredentialScanJob>>());
 
