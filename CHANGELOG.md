@@ -13,6 +13,9 @@ uses [Semantic Versioning](https://semver.org/).
   Alloy / an OpenTelemetry Collector (gRPC or HTTP/protobuf), with `service.name` and
   `tenant.name` resource attributes. Health and Prometheus probes are not traced.
 - `key_id` label on `esw_credential_days_left`, the same unique identifier as in the webhook payload.
+- `tenant_name` and `tenant_id` labels on **every** `esw_*` series (both on `/metrics` and over OTLP),
+  to tell apart the containers when one is deployed per tenant. OTLP resource attributes also
+  include `service.instance.id` (tenant id) and `tenant.id`.
 
 ### Changed
 - The `esw_*` metrics are also published as `System.Diagnostics.Metrics` instruments for the OTLP

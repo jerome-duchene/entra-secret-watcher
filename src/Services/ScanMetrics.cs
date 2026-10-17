@@ -1,5 +1,7 @@
 using System.Diagnostics.Metrics;
+using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Models;
+using Microsoft.Extensions.Options;
 using Prometheus;
 
 namespace EntraSecretWatcher.Services;
@@ -12,6 +14,8 @@ namespace EntraSecretWatcher.Services;
 /// </list>
 /// Both use the same names (<c>esw_*</c>): prometheus-net's own Meter adapter would prefix them with
 /// the meter name, which is why <c>/metrics</c> does not rely on it for these metrics.
+/// Every series carries <c>tenant_name</c> and <c>tenant_id</c> labels so that several instances
+/// (one container per tenant) can be told apart whatever the collection path.
 /// Registered as a singleton: scans run rarely (cron) while metrics are read continuously,
 /// so the last values are kept between two scans.
 /// </summary>
@@ -45,12 +49,21 @@ internal sealed class ScanMetrics : IDisposable
     private readonly Gauge _promLastScanSuccess;
     private readonly List<string[]> _promReportedLabels = [];
 
-    public ScanMetrics() : this(MeterName, Metrics.DefaultRegistry)
+    private readonly KeyValuePair<string, object?>[] _tenantTags;
+
+    public ScanMetrics(IOptions<EntraOptions> entraOptions)
+        : this(MeterName, Metrics.DefaultRegistry, entraOptions.Value.TenantName, entraOptions.Value.TenantId)
     {
     }
 
-    internal ScanMetrics(string meterName, CollectorRegistry registry)
+    internal ScanMetrics(string meterName, CollectorRegistry registry, string tenantName, string tenantId)
     {
+        _tenantTags =
+        [
+            new("tenant_name", tenantName),
+            new("tenant_id", tenantId)
+        ];
+
         // ── OpenTelemetry / System.Diagnostics.Metrics ──
         Meter = new Meter(meterName);
 
@@ -80,12 +93,18 @@ internal sealed class ScanMetrics : IDisposable
             description: "1 if the last scan succeeded, 0 otherwise.");
 
         // ── prometheus-net (/metrics) ──
-        var factory = Metrics.WithCustomRegistry(registry);
+        var factory = Metrics
+            .WithCustomRegistry(registry)
+            .WithLabels(new Dictionary<string, string>
+            {
+                ["tenant_name"] = tenantName,
+                ["tenant_id"] = tenantId
+            });
 
         _promDaysLeft = factory.CreateGauge(
             "esw_credential_days_left",
             "Days left before expiration of a credential reported by the last scan (negative = expired).",
-            "app_name", "app_id", "key_id", "type", "credential_name");
+            new GaugeConfiguration { LabelNames = ["app_name", "app_id", "key_id", "type", "credential_name"] });
         _promExpired = factory.CreateGauge(
             "esw_credentials_expired",
             "Number of expired credentials found by the last scan.",
@@ -169,13 +188,13 @@ internal sealed class ScanMetrics : IDisposable
         var snapshot = _snapshot;
         if (snapshot.LastScanSuccess is null || (requireResult && !snapshot.HasResult))
             yield break;
-        yield return new Measurement<T>(read(snapshot));
+        yield return new Measurement<T>(read(snapshot), _tenantTags);
     }
 
     private IEnumerable<Measurement<int>> ObserveLastScanSuccess()
     {
         if (_snapshot.LastScanSuccess is { } success)
-            yield return new Measurement<int>(success ? 1 : 0);
+            yield return new Measurement<int>(success ? 1 : 0, _tenantTags);
     }
 
     private IEnumerable<Measurement<int>> ObserveCredentials() =>
@@ -185,7 +204,9 @@ internal sealed class ScanMetrics : IDisposable
             new KeyValuePair<string, object?>("app_id", c.AppId),
             new KeyValuePair<string, object?>("key_id", c.KeyId),
             new KeyValuePair<string, object?>("type", c.Type.ToString().ToLowerInvariant()),
-            new KeyValuePair<string, object?>("credential_name", c.CredentialName)));
+            new KeyValuePair<string, object?>("credential_name", c.CredentialName),
+            _tenantTags[0],
+            _tenantTags[1]));
 
     public void Dispose() => Meter.Dispose();
 }

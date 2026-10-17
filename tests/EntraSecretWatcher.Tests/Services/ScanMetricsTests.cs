@@ -35,6 +35,7 @@ public class ScanMetricsTests
 
         var observed = Observe(metrics);
         observed.Single("esw_credentials_expired").Value.Should().Be(1);
+        observed.Single("esw_credentials_expired").Tags["tenant_name"].Should().Be("Contoso");
         observed.Single("esw_credentials_expiring_soon").Value.Should().Be(1);
         observed.Single("esw_apps_scanned").Value.Should().Be(12);
         observed.Single("esw_last_scan_success").Value.Should().Be(1);
@@ -48,6 +49,8 @@ public class ScanMetricsTests
         expired.Tags["key_id"].Should().Be("key0");
         expired.Tags["type"].Should().Be("secret");
         expired.Tags["credential_name"].Should().Be("cred0");
+        expired.Tags["tenant_name"].Should().Be("Contoso");
+        expired.Tags["tenant_id"].Should().Be("tid-1");
     }
 
     [Fact]
@@ -111,13 +114,13 @@ public class ScanMetricsTests
         var output = await ScrapeAsync(registry);
 
         // exact lines: the names must not be prefixed (e.g. with the meter name)
-        output.Should().MatchRegex(@"(?m)^esw_credentials_expired 1?$");
-        output.Should().MatchRegex(@"(?m)^esw_credentials_expiring_soon 1?$");
-        output.Should().MatchRegex(@"(?m)^esw_apps_scanned 12?$");
-        output.Should().MatchRegex(@"(?m)^esw_last_scan_success 1?$");
-        output.Should().MatchRegex(@"(?m)^esw_last_scan_timestamp_seconds 1\.7E\+09?$|^esw_last_scan_timestamp_seconds 1700000000?$");
-        output.Should().MatchRegex(
-            @"(?m)^esw_credential_days_left\{app_name=""App0"",app_id=""id0"",key_id=""key0"",type=""secret"",credential_name=""cred0""\} -3?$");
+        AssertSample(output, "esw_credentials_expired", "1");
+        AssertSample(output, "esw_credentials_expiring_soon", "1");
+        AssertSample(output, "esw_apps_scanned", "12");
+        AssertSample(output, "esw_last_scan_success", "1");
+        AssertSample(output, "esw_last_scan_timestamp_seconds", "1700000000");
+        AssertSample(output, "esw_credential_days_left", "-3",
+            "app_name=\"App0\"", "app_id=\"id0\"", "key_id=\"key0\"", "type=\"secret\"", "credential_name=\"cred0\"");
     }
 
     [Fact]
@@ -126,7 +129,7 @@ public class ScanMetricsTests
         var registry = new CollectorRegistry();
         using var metrics = NewMetrics(registry);
 
-        (await ScrapeAsync(registry)).Should().NotMatchRegex(@"(?m)^esw_credentials_expired ");
+        (await ScrapeAsync(registry)).Should().NotMatchRegex(@"(?m)^esw_credentials_expired[ {]");
     }
 
     [Fact]
@@ -151,20 +154,32 @@ public class ScanMetricsTests
         metrics.RecordFailure();
 
         var output = await ScrapeAsync(registry);
-        output.Should().MatchRegex(@"(?m)^esw_last_scan_success 0?$");
-        output.Should().MatchRegex(@"(?m)^esw_credentials_expiring_soon 1?$");
+        AssertSample(output, "esw_last_scan_success", "0");
+        AssertSample(output, "esw_credentials_expiring_soon", "1");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ScanMetrics NewMetrics(CollectorRegistry? registry = null) =>
-        new($"test-{Guid.NewGuid()}", registry ?? new CollectorRegistry());
+        new($"test-{Guid.NewGuid()}", registry ?? new CollectorRegistry(), "Contoso", "tid-1");
 
     private static async Task<string> ScrapeAsync(CollectorRegistry registry)
     {
         using var stream = new MemoryStream();
         await registry.CollectAndExportAsTextAsync(stream, TestContext.Current.CancellationToken);
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    // Exact sample line: the name must not be prefixed, and the tenant labels must be present
+    private static void AssertSample(string output, string name, string value, params string[] labels)
+    {
+        var lines = output.Split('\n').Select(l => l.TrimEnd('\r'))
+            .Where(l => (l.StartsWith(name + "{") || l.StartsWith(name + " ")) && labels.All(l.Contains)).ToList();
+
+        lines.Should().ContainSingle($"{name} with {string.Join(',', labels)} should be published once");
+        var line = lines[0];
+        line.Should().Contain("tenant_name=\"Contoso\"").And.Contain("tenant_id=\"tid-1\"");
+        line.Should().EndWith(" " + value);
     }
 
     private sealed record Observation(string Instrument, double Value, IReadOnlyDictionary<string, object?> Tags);

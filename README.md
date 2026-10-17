@@ -192,15 +192,24 @@ They can also be **pushed** over OTLP, see [OpenTelemetry](#opentelemetry-otlp-p
 | `esw_last_scan_timestamp_seconds` | Unix timestamp of the last scan attempt |
 | `esw_last_scan_success` | `1` if the last scan succeeded, `0` otherwise |
 
-Prometheus scrape configuration:
+**Every `esw_*` series carries the labels `tenant_name` and `tenant_id`** (from `Entra__TenantName` and
+`Entra__TenantId`). With one container per tenant, this is what lets you filter dashboards and route
+alerts per tenant, whether Prometheus scrapes `/metrics` or the metrics are pushed over OTLP.
+
+> ⚠️ Set a **distinct `Entra__TenantName`** on each container: its default value is `Default`.
+> `tenant_id` always tells tenants apart, but the name is what you will want to read in alerts.
+
+Prometheus scrape configuration (one target per tenant):
 
 ```yaml
 scrape_configs:
   - job_name: entra-secret-watcher
     scrape_interval: 1m
     static_configs:
-      - targets: ["esw-contoso:8080"]
+      - targets: ["esw-contoso:8080", "esw-fabrikam:8080", "esw-northwind:8080"]
 ```
+
+The `instance` label identifies the container; `tenant_name` identifies the tenant.
 
 Example alert rules:
 
@@ -212,7 +221,7 @@ groups:
         expr: esw_credential_days_left >= 0 and esw_credential_days_left <= 14
         labels: { severity: warning }
         annotations:
-          summary: "{{ $labels.type }} '{{ $labels.credential_name }}' of {{ $labels.app_name }} expires in {{ $value }} day(s)"
+          summary: "[{{ $labels.tenant_name }}] {{ $labels.type }} '{{ $labels.credential_name }}' of {{ $labels.app_name }} expires in {{ $value }} day(s)"
 
       - alert: EntraCredentialExpired
         expr: esw_credential_days_left < 0
@@ -222,7 +231,7 @@ groups:
         expr: time() - esw_last_scan_timestamp_seconds > 2 * 86400
         labels: { severity: warning }
         annotations:
-          summary: "No scan for more than 2 days"
+          summary: "[{{ $labels.tenant_name }}] No scan for more than 2 days"
 
       - alert: EntraSecretWatcherScanFailed
         expr: esw_last_scan_success == 0
@@ -252,7 +261,11 @@ Disabled by default. When enabled, the app **pushes** its telemetry over OTLP, i
 | `OpenTelemetry__Protocol` | `Grpc` or `HttpProtobuf` | `Grpc` |
 | `OpenTelemetry__ServiceName` | `service.name` resource attribute | `entra-secret-watcher` |
 
-Every signal carries the resource attributes `service.name` and `tenant.name` (from `Entra__TenantName`).
+Every signal carries the resource attributes `service.name`, `service.instance.id` (the tenant id, so
+each container is a distinct instance), `tenant.name` and `tenant.id`. The `esw_*` metrics also carry
+`tenant_name` and `tenant_id` as regular labels, so they identify the tenant without any extra
+Alloy configuration. Extra resource attributes can be added with the standard
+`OTEL_RESOURCE_ATTRIBUTES` variable (e.g. `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod`).
 
 #### Example with Grafana Alloy
 
@@ -280,6 +293,8 @@ otelcol.processor.batch "default" {
 
 // Metrics → Prometheus (remote write)
 otelcol.exporter.prometheus "default" {
+  // Optional: also turn resource attributes (tenant.name, tenant.id, …) into labels on every series
+  // resource_to_telemetry_conversion = true
   forward_to = [prometheus.remote_write.default.receiver]
 }
 prometheus.remote_write "default" {

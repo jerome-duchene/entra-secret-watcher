@@ -67,6 +67,7 @@ public static class ServiceCollectionExtensions
             return services;
 
         var tenantName = configuration[$"{EntraOptions.SectionName}:{nameof(EntraOptions.TenantName)}"];
+        var tenantId = configuration[$"{EntraOptions.SectionName}:{nameof(EntraOptions.TenantId)}"];
 
         void ConfigureExporter(OtlpExporterOptions exporter, string signal)
         {
@@ -85,8 +86,13 @@ public static class ServiceCollectionExtensions
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
-                .AddService(otel.ServiceName)
-                .AddAttributes([new KeyValuePair<string, object>("tenant.name", string.IsNullOrWhiteSpace(tenantName) ? "Default" : tenantName)]))
+                // One container per tenant: the tenant id makes each instance distinct (service.instance.id)
+                .AddService(otel.ServiceName, serviceInstanceId: string.IsNullOrWhiteSpace(tenantId) ? null : tenantId)
+                .AddAttributes(
+                [
+                    new KeyValuePair<string, object>("tenant.name", string.IsNullOrWhiteSpace(tenantName) ? "Default" : tenantName),
+                    new KeyValuePair<string, object>("tenant.id", tenantId ?? string.Empty)
+                ]))
             .WithTracing(tracing => tracing
                 .AddSource("EntraSecretWatcher.Jobs", "EntraSecretWatcher.Scanner")
                 .AddAspNetCoreInstrumentation(o => o.Filter = IsBusinessRequest)
