@@ -17,6 +17,7 @@ A lightweight, self-hosted Docker container that monitors **Microsoft Entra ID**
   - **Gotify** — self-hosted push notifications
   - **Email** — via Microsoft Graph API (no SMTP needed)
   - **Microsoft Teams** — via Graph API with Adaptive Cards
+  - **Generic webhook** — one JSON POST per credential (Jira Automation, n8n, Power Automate…)
 - ⏰ Scheduled scanning via **Hangfire** with built-in dashboard
 - 🧪 **Dry-run mode** — test without sending notifications
 - 📡 **OpenTelemetry** traces for observability
@@ -138,6 +139,41 @@ All settings can be configured via **environment variables** using the .NET `__`
 | `Notification__Teams__WebhookUrl` | Incoming Webhook URL from the Teams channel connector |
 
 > No Graph API permission required. Create the webhook in Teams under **Channel → Connectors → Incoming Webhook**.
+
+### Notification — Generic webhook
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `Notification__Webhook__Enabled` | `true` / `false` | `false` |
+| `Notification__Webhook__Url` | URL receiving the POST requests | |
+| `Notification__Webhook__Secret` | Optional shared secret sent in a header | |
+| `Notification__Webhook__SecretHeaderName` | Header carrying the secret | `X-Webhook-Token` |
+
+One request is sent **per expiring credential**, regardless of `Watcher__GroupedReport`:
+
+```json
+{
+  "event": "credential.expiring",
+  "tenantName": "Contoso",
+  "tenantId": "…",
+  "scannedAt": "2026-10-17T03:00:00Z",
+  "credential": {
+    "keyId": "3f1c…",
+    "appId": "…",
+    "appName": "My App",
+    "type": "secret",
+    "name": "prod-secret",
+    "expiresOn": "2026-10-25T00:00:00Z",
+    "daysLeft": 8,
+    "status": "expiringSoon"
+  }
+}
+```
+
+`credential.keyId` is the Entra key identifier: it uniquely identifies a secret or certificate
+(names can be empty or duplicated). The tool is stateless and calls the webhook at every scan,
+so the receiver is responsible for deduplication (e.g. a Jira Automation rule that looks for an
+existing issue labelled with the `keyId` before creating one).
 
 ### OpenTelemetry (optional)
 

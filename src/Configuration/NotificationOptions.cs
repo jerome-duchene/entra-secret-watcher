@@ -9,9 +9,14 @@ internal record NotificationOptions : IValidatableObject
     public GotifyOptions? Gotify { get; init; }
     public EmailOptions? Email { get; init; }
     public TeamsOptions? Teams { get; init; }
+    public WebhookOptions? Webhook { get; init; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (Webhook is not null)
+            foreach (var result in ValidateNested(Webhook, nameof(Webhook)))
+                yield return result;
+
         if (Gotify is not null)
             foreach (var result in ValidateNested(Gotify, nameof(Gotify)))
                 yield return result;
@@ -121,5 +126,44 @@ internal record TeamsOptions : IValidatableObject
             yield return new ValidationResult(
                 "Teams:WebhookUrl must be a valid HTTP(S) URL.",
                 [nameof(WebhookUrl)]);
+    }
+}
+
+internal record WebhookOptions : IValidatableObject
+{
+    public const string DefaultSecretHeaderName = "X-Webhook-Token";
+
+    public bool Enabled { get; init; } = false;
+
+    /// <summary>
+    /// Generic webhook URL. Receives one JSON POST per expiring credential.
+    /// </summary>
+    public string Url { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Optional shared secret, sent in the header named by <see cref="SecretHeaderName"/>.
+    /// </summary>
+    public string Secret { get; init; } = string.Empty;
+
+    public string SecretHeaderName { get; init; } = DefaultSecretHeaderName;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (!Enabled) yield break;
+
+        if (string.IsNullOrWhiteSpace(Url))
+            yield return new ValidationResult(
+                "Webhook:Url is required when Webhook is enabled.",
+                [nameof(Url)]);
+        else if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) ||
+                 (uri.Scheme != "http" && uri.Scheme != "https"))
+            yield return new ValidationResult(
+                "Webhook:Url must be a valid HTTP(S) URL.",
+                [nameof(Url)]);
+
+        if (!string.IsNullOrEmpty(Secret) && string.IsNullOrWhiteSpace(SecretHeaderName))
+            yield return new ValidationResult(
+                "Webhook:SecretHeaderName is required when Webhook:Secret is set.",
+                [nameof(SecretHeaderName)]);
     }
 }

@@ -89,6 +89,7 @@ internal class GraphCredentialScanner(
                 {
                     AppName = app.DisplayName ?? "Unknown",
                     AppId = app.AppId ?? "Unknown",
+                    KeyId = secret.KeyId?.ToString() ?? string.Empty,
                     Type = CredentialType.Secret,
                     CredentialName = secret.DisplayName ?? "Unnamed",
                     ExpiresOn = secret.EndDateTime.Value,
@@ -112,6 +113,7 @@ internal class GraphCredentialScanner(
                 {
                     AppName = app.DisplayName ?? "Unknown",
                     AppId = app.AppId ?? "Unknown",
+                    KeyId = cert.KeyId?.ToString() ?? string.Empty,
                     Type = CredentialType.Certificate,
                     CredentialName = cert.DisplayName ?? "Unnamed",
                     ExpiresOn = cert.EndDateTime.Value,

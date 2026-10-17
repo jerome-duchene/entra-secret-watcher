@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationChannel, GotifyNotificationChannel>();
         services.AddScoped<INotificationChannel, EmailNotificationChannel>();
         services.AddScoped<INotificationChannel, TeamsNotificationChannel>();
+        services.AddScoped<INotificationChannel, WebhookNotificationChannel>();
 
         // HTTP client
         services.AddHttpClient();

@@ -17,6 +17,13 @@ internal record ExpiringCredential
 {
     public required string AppName { get; init; }
     public required string AppId { get; init; }
+
+    /// <summary>
+    /// Entra key identifier (GUID) of the secret or certificate. Unique per credential,
+    /// unlike the display name which can be empty or duplicated.
+    /// </summary>
+    public string KeyId { get; init; } = string.Empty;
+
     public required CredentialType Type { get; init; }
     public required string CredentialName { get; init; }
     public required DateTimeOffset ExpiresOn { get; init; }
