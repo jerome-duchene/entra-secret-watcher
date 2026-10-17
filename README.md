@@ -239,6 +239,9 @@ groups:
         labels: { severity: warning }
 ```
 
+A ready-to-use **Grafana dashboard** (all tenants in one dashboard, filterable per tenant) is available in
+[`grafana/`](grafana/README.md).
+
 > **One ticket per credential instead of a daily notification?** Prometheus Alertmanager
 > deduplicates alerts and can open a ticket once (e.g. with its Jira receiver). Alternatively use the
 > [generic webhook](#notification--generic-webhook) and deduplicate on `credential.keyId` in the receiver.

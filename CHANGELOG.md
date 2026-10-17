@@ -17,6 +17,9 @@ uses [Semantic Versioning](https://semver.org/).
   to tell apart the containers when one is deployed per tenant. OTLP resource attributes also
   include `service.instance.id` (tenant id) and `tenant.id`.
 
+- **Grafana dashboard** in [`grafana/`](grafana/): overview, one row per tenant, credentials to renew,
+  plus logs (Loki) and traces (Tempo) rows. One dashboard covers all tenants, with a *Tenant* variable.
+
 ### Changed
 - The `esw_*` metrics are also published as `System.Diagnostics.Metrics` instruments for the OTLP
   export, with the same names as on `/metrics`. Both come from the same snapshot of the last scan.
