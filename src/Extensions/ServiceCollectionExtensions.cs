@@ -4,6 +4,11 @@ using EntraSecretWatcher.Services;
 using EntraSecretWatcher.Services.Notifications;
 using EntraSecretWatcher.Services.Notifications.Channels;
 using Hangfire;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace EntraSecretWatcher.Extensions;
 
@@ -44,6 +49,64 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Pushes traces, metrics and logs over OTLP when <c>OpenTelemetry:Enabled</c> is true.
+    /// The Prometheus <c>/metrics</c> endpoint is independent and always available.
+    /// </summary>
+    public static IServiceCollection AddObservability(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<OpenTelemetryOptions>()
+            .BindConfiguration(OpenTelemetryOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        var otel = configuration.GetSection(OpenTelemetryOptions.SectionName).Get<OpenTelemetryOptions>()
+            ?? new OpenTelemetryOptions();
+        if (!otel.Enabled)
+            return services;
+
+        var tenantName = configuration[$"{EntraOptions.SectionName}:{nameof(EntraOptions.TenantName)}"];
+
+        void ConfigureExporter(OtlpExporterOptions exporter, string signal)
+        {
+            exporter.Protocol = otel.Protocol == OtlpTransport.HttpProtobuf
+                ? OtlpExportProtocol.HttpProtobuf
+                : OtlpExportProtocol.Grpc;
+
+            if (string.IsNullOrWhiteSpace(otel.Endpoint))
+                return; // standard OTEL_EXPORTER_OTLP_* variables / defaults apply
+
+            // With HTTP/protobuf the SDK does not append the signal path to an endpoint set in code
+            exporter.Endpoint = otel.Protocol == OtlpTransport.HttpProtobuf
+                ? new Uri($"{otel.Endpoint.TrimEnd('/')}/v1/{signal}")
+                : new Uri(otel.Endpoint);
+        }
+
+        services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource
+                .AddService(otel.ServiceName)
+                .AddAttributes([new KeyValuePair<string, object>("tenant.name", string.IsNullOrWhiteSpace(tenantName) ? "Default" : tenantName)]))
+            .WithTracing(tracing => tracing
+                .AddSource("EntraSecretWatcher.Jobs", "EntraSecretWatcher.Scanner")
+                .AddAspNetCoreInstrumentation(o => o.Filter = IsBusinessRequest)
+                .AddHttpClientInstrumentation()
+                .AddOtlpExporter(o => ConfigureExporter(o, "traces")))
+            .WithMetrics(metrics => metrics
+                .AddMeter(ScanMetrics.MeterName)
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddOtlpExporter(o => ConfigureExporter(o, "metrics")))
+            .WithLogging(logging => logging
+                .AddOtlpExporter(o => ConfigureExporter(o, "logs")));
+
+        return services;
+    }
+
+    // Do not trace the probes (health checks and Prometheus scrapes)
+    private static bool IsBusinessRequest(HttpContext context) =>
+        !context.Request.Path.StartsWithSegments("/metrics") &&
+        !context.Request.Path.StartsWithSegments("/health");
 
     public static IServiceCollection AddHangfireServices(this IServiceCollection services)
     {

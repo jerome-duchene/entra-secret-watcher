@@ -6,6 +6,24 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-17
+
+### Added
+- **OpenTelemetry OTLP export** (`OpenTelemetry__*`): traces, metrics and logs pushed to Grafana
+  Alloy / an OpenTelemetry Collector (gRPC or HTTP/protobuf), with `service.name` and
+  `tenant.name` resource attributes. Health and Prometheus probes are not traced.
+- `key_id` label on `esw_credential_days_left`, the same unique identifier as in the webhook payload.
+
+### Changed
+- The `esw_*` metrics are also published as `System.Diagnostics.Metrics` instruments for the OTLP
+  export, with the same names as on `/metrics`. Both come from the same snapshot of the last scan.
+- No `esw_*` series is published before the first scan (instead of misleading zeros), so a
+  `time() - esw_last_scan_timestamp_seconds` alert does not fire right after a restart.
+
+### Fixed
+- The 0.3.0 documentation and compose example described an OpenTelemetry setting that had no
+  implementation. It is now implemented.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added
@@ -22,5 +40,6 @@ uses [Semantic Versioning](https://semver.org/).
 - README: new sections for metrics (with Prometheus scrape config and alert rules), the webhook
   channel and the release process.
 
-[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.2.1...v0.3.0
