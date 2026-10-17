@@ -2,6 +2,7 @@ using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Extensions;
 using EntraSecretWatcher.Jobs;
 using Hangfire;
+using Prometheus;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -25,6 +26,9 @@ app.MapGet("/health", (IConfiguration config) =>
         timestamp = DateTimeOffset.UtcNow
     });
 });
+
+// Prometheus metrics endpoint
+app.MapMetrics();
 
 // Hangfire dashboard (read-only, no auth — container is expected to run in a private network)
 app.UseHangfireDashboard("/hangfire", new DashboardOptions

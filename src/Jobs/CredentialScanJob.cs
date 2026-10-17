@@ -9,6 +9,7 @@ namespace EntraSecretWatcher.Jobs;
 internal class CredentialScanJob(
     GraphCredentialScanner scanner,
     NotificationDispatcher dispatcher,
+    ScanMetrics metrics,
     IOptions<WatcherOptions> options,
     ILogger<CredentialScanJob> logger)
 {
@@ -16,6 +17,7 @@ internal class CredentialScanJob(
 
     private readonly GraphCredentialScanner _scanner = scanner;
     private readonly NotificationDispatcher _dispatcher = dispatcher;
+    private readonly ScanMetrics _metrics = metrics;
     private readonly WatcherOptions _options = options.Value;
     private readonly ILogger<CredentialScanJob> _logger = logger;
 
@@ -30,6 +32,7 @@ internal class CredentialScanJob(
         try
         {
             var result = await _scanner.ScanAsync();
+            _metrics.RecordSuccess(result);
 
             activity?.SetTag("scan.credentials_found", result.Credentials.Count);
             activity?.SetTag("scan.apps_scanned", result.TotalApplicationsScanned);
@@ -62,6 +65,7 @@ internal class CredentialScanJob(
         }
         catch (Exception ex)
         {
+            _metrics.RecordFailure();
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex, "Credential scan job failed");
             throw; // Let Hangfire handle retry
