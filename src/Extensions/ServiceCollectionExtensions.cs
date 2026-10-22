@@ -3,7 +3,6 @@ using EntraSecretWatcher.Jobs;
 using EntraSecretWatcher.Services;
 using EntraSecretWatcher.Services.Notifications;
 using EntraSecretWatcher.Services.Notifications.Channels;
-using Hangfire;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
@@ -37,6 +36,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GraphCredentialScanner>();
         services.AddScoped<NotificationDispatcher>();
         services.AddScoped<CredentialScanJob>();
+        services.AddSingleton<ScanScheduler>();
+        services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
 
         // Notification channels
         services.AddScoped<INotificationChannel, GotifyNotificationChannel>();
@@ -46,6 +47,7 @@ public static class ServiceCollectionExtensions
 
         // HTTP client
         services.AddHttpClient();
+        services.AddHttpClient<GraphClient>();
 
         return services;
     }
@@ -113,21 +115,4 @@ public static class ServiceCollectionExtensions
     private static bool IsBusinessRequest(HttpContext context) =>
         !context.Request.Path.StartsWithSegments("/metrics") &&
         !context.Request.Path.StartsWithSegments("/health");
-
-    public static IServiceCollection AddHangfireServices(this IServiceCollection services)
-    {
-        services.AddHangfire(config =>
-        {
-            config.UseInMemoryStorage();
-            config.UseSimpleAssemblyNameTypeSerializer();
-            config.UseRecommendedSerializerSettings();
-        });
-
-        services.AddHangfireServer(options =>
-        {
-            options.WorkerCount = 1;
-        });
-
-        return services;
-    }
 }

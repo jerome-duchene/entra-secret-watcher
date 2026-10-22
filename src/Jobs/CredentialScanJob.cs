@@ -68,7 +68,7 @@ internal class CredentialScanJob(
             _metrics.RecordFailure();
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex, "Credential scan job failed");
-            throw; // Let Hangfire handle retry
+            throw; // The scheduler logs nothing more and waits for the next run
         }
     }
 }

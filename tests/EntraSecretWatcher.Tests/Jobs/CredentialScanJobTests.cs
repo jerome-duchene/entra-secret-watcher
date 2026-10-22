@@ -100,6 +100,7 @@ public class CredentialScanJobTests
         var watcherOpts = Options.Create(new WatcherOptions { DryRun = dryRun });
 
         var scanner = Substitute.For<GraphCredentialScanner>(
+            new GraphClient(new HttpClient(), entraOpts),
             entraOpts,
             watcherOpts,
             Substitute.For<ILogger<GraphCredentialScanner>>());
