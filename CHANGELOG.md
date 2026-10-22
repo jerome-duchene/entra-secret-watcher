@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-22
+
 ### Changed
 - **Lighter image (~170 MB → ~122 MB)**: Hangfire is replaced by [Cronos](https://github.com/HangfireIO/Cronos) and a small
   hosted service, and the Microsoft Graph SDK by a minimal HTTP client. `Watcher__CronSchedule` is unchanged
@@ -13,6 +15,7 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Removed
 - The `/hangfire` dashboard and Hangfire's automatic retries: a failed scan is retried at the next scheduled run.
+- `POST /scan` now answers `202 Accepted` without a body (no more `jobId`).
 
 ## [0.5.0] - 2026-10-17
 
@@ -63,7 +66,8 @@ uses [Semantic Versioning](https://semver.org/).
 - README: new sections for metrics (with Prometheus scrape config and alert rules), the webhook
   channel and the release process.
 
-[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jerome-duchene/entra-secret-watcher/compare/v0.2.1...v0.3.0
