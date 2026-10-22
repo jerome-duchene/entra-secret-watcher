@@ -1,4 +1,5 @@
 using EntraSecretWatcher.Configuration;
+using EntraSecretWatcher.Services;
 using EntraSecretWatcher.Services.Notifications.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -19,7 +20,7 @@ public class EmailIntegrationTests : IntegrationTestBase
 
         var channel = new EmailNotificationChannel(
             Options.Create(new NotificationOptions { Email = email! with { Enabled = true } }),
-            Options.Create(entra!),
+            new GraphClient(new HttpClient(), Options.Create(entra!)),
             NullLogger<EmailNotificationChannel>.Instance);
 
         await channel.Invoking(c => c.SendAsync(BuildTestScanResult()))

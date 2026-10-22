@@ -7,8 +7,8 @@ Tu travailles sur **entra-secret-watcher**, un outil open-source (Apache 2.0) qu
 ## Architecture
 
 - **.NET 10** — ASP.NET Core minimal API
-- **Hangfire** (InMemory) — scheduling des scans + dashboard `/hangfire`
-- **Microsoft Graph SDK** — scan des app registrations via `Application.Read.All`
+- **Cronos** + `ScanScheduler` (BackgroundService) — scheduling des scans via `Watcher:CronSchedule` (UTC)
+- **Graph REST** via `GraphClient` (HttpClient, client credentials) — scan des app registrations (`Application.Read.All`) et envoi d'email (`Mail.Send`)
 - **Docker** — un container par tenant, configuration 100% via variables d'environnement
 - **OpenTelemetry** — traces OTLP optionnelles
 
@@ -21,7 +21,7 @@ entra-secret-watcher/
 ├── README.md
 ├── LICENSE                             # Apache 2.0
 └── src/
-    ├── Program.cs                      # Entry point, health endpoint, Hangfire setup
+    ├── Program.cs                      # Entry point, health endpoint
     ├── appsettings.json
     ├── EntraSecretWatcher.csproj
     ├── Configuration/
@@ -29,6 +29,7 @@ entra-secret-watcher/
     ├── Models/
     │   └── Credentials.cs              # ExpiringCredential, ScanResult, enums
     ├── Services/
+    │   ├── GraphClient.cs               # Client Graph minimal (token, applications, sendMail)
     │   ├── GraphCredentialScanner.cs    # ICredentialScanner — scan via Graph API avec pagination
     │   └── Notifications/
     │       ├── NotificationDispatcher.cs   # Dispatch vers tous les canaux activés
@@ -37,7 +38,8 @@ entra-secret-watcher/
     │       ├── EmailNotificationChannel.cs # Via Graph API (Mail.Send)
     │       └── TeamsNotificationChannel.cs # Via Incoming Webhook
     ├── Jobs/
-    │   └── CredentialScanJob.cs        # Job Hangfire orchestrant scan + notification
+    │   ├── CredentialScanJob.cs        # Job orchestrant scan + notification
+    │   └── ScanScheduler.cs            # BackgroundService cron (Cronos) + déclenchement manuel
     └── Extensions/
         └── ServiceCollectionExtensions.cs  # DI registration
 ```

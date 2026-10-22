@@ -6,6 +6,14 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Lighter image (~170 MB → ~122 MB)**: Hangfire is replaced by [Cronos](https://github.com/HangfireIO/Cronos) and a small
+  hosted service, and the Microsoft Graph SDK by a minimal HTTP client. `Watcher__CronSchedule` is unchanged
+  (5-field cron, UTC). The base image is now `aspnet:10.0-alpine-composite` with invariant globalization.
+
+### Removed
+- The `/hangfire` dashboard and Hangfire's automatic retries: a failed scan is retried at the next scheduled run.
+
 ## [0.5.0] - 2026-10-17
 
 ### Added

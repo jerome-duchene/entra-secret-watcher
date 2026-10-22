@@ -16,6 +16,7 @@ public class GraphScannerIntegrationTests : IntegrationTestBase
             Xunit.Assert.Skip("Entra non configuré (Integration:Entra:TenantId manquant)");
 
         var scanner = new GraphCredentialScanner(
+            new GraphClient(new HttpClient(), Options.Create(entra!)),
             Options.Create(entra!),
             Options.Create(new WatcherOptions()),
             NullLogger<GraphCredentialScanner>.Instance);

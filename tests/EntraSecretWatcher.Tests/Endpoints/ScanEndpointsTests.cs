@@ -1,12 +1,7 @@
 using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Endpoints;
 using FluentAssertions;
-using Hangfire;
-using Hangfire.Common;
-using Hangfire.States;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using NSubstitute;
 
 namespace EntraSecretWatcher.Tests.Endpoints;
 
@@ -17,19 +12,14 @@ public class ScanEndpointsTests
     private static readonly WatcherOptions Options = new() { ManualTriggerSecret = Secret };
 
     [Fact]
-    public void Trigger_ValidToken_EnqueuesScanAndReturnsAccepted()
+    public void Trigger_ValidToken_StartsScanAndReturnsAccepted()
     {
-        var jobs = Substitute.For<IBackgroundJobClient>();
-        jobs.Create(Arg.Any<Job>(), Arg.Any<IState>()).Returns("42");
+        var started = 0;
 
-        var result = ScanEndpoints.Trigger(Secret, Options, jobs);
+        var result = ScanEndpoints.Trigger(Secret, Options, () => started++);
 
-        var accepted = result.Should().BeOfType<Accepted<ScanAccepted>>().Subject;
-        accepted.Location.Should().Be("/hangfire/jobs/details/42");
-        accepted.Value!.JobId.Should().Be("42");
-        jobs.Received(1).Create(
-            Arg.Is<Job>(j => j.Method.Name == "ExecuteAsync"),
-            Arg.Any<IState>());
+        result.Should().BeOfType<Accepted>();
+        started.Should().Be(1);
     }
 
     [Theory]
@@ -37,24 +27,24 @@ public class ScanEndpointsTests
     [InlineData("")]
     [InlineData("wrong-token")]
     [InlineData("0123456789abcdef-secre")]
-    public void Trigger_MissingOrWrongToken_ReturnsUnauthorizedAndEnqueuesNothing(string? token)
+    public void Trigger_MissingOrWrongToken_ReturnsUnauthorizedAndStartsNothing(string? token)
     {
-        var jobs = Substitute.For<IBackgroundJobClient>();
+        var started = 0;
 
-        var result = ScanEndpoints.Trigger(token, Options, jobs);
+        var result = ScanEndpoints.Trigger(token, Options, () => started++);
 
         result.Should().BeOfType<UnauthorizedHttpResult>();
-        jobs.DidNotReceive().Create(Arg.Any<Job>(), Arg.Any<IState>());
+        started.Should().Be(0);
     }
 
     [Fact]
     public void Trigger_NoSecretConfigured_NeverAuthorizes()
     {
-        var jobs = Substitute.For<IBackgroundJobClient>();
+        var started = 0;
 
-        var result = ScanEndpoints.Trigger("", new WatcherOptions(), jobs);
+        var result = ScanEndpoints.Trigger("", new WatcherOptions(), () => started++);
 
         result.Should().BeOfType<UnauthorizedHttpResult>();
-        jobs.DidNotReceive().Create(Arg.Any<Job>(), Arg.Any<IState>());
+        started.Should().Be(0);
     }
 }

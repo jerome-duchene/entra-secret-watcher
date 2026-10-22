@@ -1,24 +1,17 @@
-using Azure.Identity;
 using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Models;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
-using Microsoft.Graph.Models;
-using Microsoft.Graph.Users.Item.SendMail;
-using Microsoft.Kiota.Authentication.Azure;
-using Microsoft.Kiota.Http.HttpClientLibrary.Middleware;
 using System.Text;
 
 namespace EntraSecretWatcher.Services.Notifications.Channels;
 
 internal class EmailNotificationChannel(
     IOptions<NotificationOptions> notificationOptions,
-    IOptions<EntraOptions> entraOptions,
-    ILogger<EmailNotificationChannel> logger) 
+    GraphClient graph,
+    ILogger<EmailNotificationChannel> logger)
     : INotificationChannel
 {
     private readonly EmailOptions? _emailOptions = notificationOptions.Value.Email;
-    private readonly EntraOptions _entraOptions = entraOptions.Value;
     private readonly ILogger<EmailNotificationChannel> _logger = logger;
 
     public string Name => "Email (Graph API)";
@@ -28,48 +21,15 @@ internal class EmailNotificationChannel(
     {
         if (_emailOptions is null) return;
 
-        var credential = new ClientSecretCredential(
-            _entraOptions.TenantId,
-            _entraOptions.ClientId,
-            _entraOptions.ClientSecret);
-
-        // Disable SDK-level retries: SendMail is not idempotent — a retry after a transient 503/504
-        // sends a duplicate email even though the first request already succeeded server-side.
-        var authProvider = new AzureIdentityAuthenticationProvider(credential, scopes: ["https://graph.microsoft.com/.default"]);
-        var handlers = GraphClientFactory.CreateDefaultHandlers()
-            .Where(h => h is not RetryHandler)
-            .ToList();
-        var httpClient = GraphClientFactory.Create(handlers);
-        var graphClient = new GraphServiceClient(httpClient, authProvider);
-        var htmlBody = BuildHtml(result);
-
         var recipients = _emailOptions.To
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(email => new Recipient
-            {
-                EmailAddress = new EmailAddress { Address = email }
-            })
-            .ToList();
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var message = new Message
-        {
-            Subject = $"🔐 Entra ID Credential Report — {result.TenantName} ({result.Credentials.Count} expiring)",
-            Body = new ItemBody
-            {
-                ContentType = BodyType.Html,
-                Content = htmlBody
-            },
-            ToRecipients = recipients
-        };
-
-        var sendMailBody = new SendMailPostRequestBody
-        {
-            Message = message,
-            SaveToSentItems = false
-        };
-
-        await graphClient.Users[_emailOptions.From].SendMail
-            .PostAsync(sendMailBody, cancellationToken: ct);
+        await graph.SendMailAsync(
+            _emailOptions.From,
+            $"🔐 Entra ID Credential Report — {result.TenantName} ({result.Credentials.Count} expiring)",
+            BuildHtml(result),
+            recipients,
+            ct);
 
         _logger.LogDebug("Email notification sent to {Recipients}", _emailOptions.To);
     }

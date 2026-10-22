@@ -1,9 +1,7 @@
 using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Endpoints;
 using EntraSecretWatcher.Extensions;
-using EntraSecretWatcher.Jobs;
 using EntraSecretWatcher.Services;
-using Hangfire;
 using Prometheus;
 
 // Our meter is published on /metrics by ScanMetrics itself (the adapter would prefix the names)
@@ -17,7 +15,6 @@ builder.Configuration.AddEnvironmentVariables(prefix: "ESW_");
 
 // Register services
 builder.Services.AddEntraSecretWatcher();
-builder.Services.AddHangfireServices();
 builder.Services.AddObservability(builder.Configuration);
 
 var app = builder.Build();
@@ -40,31 +37,10 @@ app.MapGet("/health", (IConfiguration config) =>
 // Prometheus metrics endpoint
 app.MapMetrics();
 
-// Hangfire dashboard (read-only, no auth — container is expected to run in a private network)
-app.UseHangfireDashboard("/hangfire", new DashboardOptions
-{
-    IsReadOnlyFunc = _ => true,
-    DashboardTitle = "Entra Secret Watcher",
-    Authorization = []
-});
-
-// Register recurring job
 var watcherOptions = app.Configuration.GetSection(WatcherOptions.SectionName).Get<WatcherOptions>()
     ?? new WatcherOptions();
 
-RecurringJob.AddOrUpdate<CredentialScanJob>(
-    CredentialScanJob.JobId,
-    job => job.ExecuteAsync(),
-    watcherOptions.CronSchedule);
-
 // On-demand scan: POST /scan (disabled unless Watcher:ManualTriggerSecret is set)
 app.MapManualScan(watcherOptions);
-
-// Scan right away at startup so that metrics are available before the next cron
-if (watcherOptions.RunOnStartup)
-{
-    app.Services.GetRequiredService<IBackgroundJobClient>()
-        .Enqueue<CredentialScanJob>(job => job.ExecuteAsync());
-}
 
 app.Run();
