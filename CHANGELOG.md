@@ -6,6 +6,15 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Application health metrics (`esw_scans_total`, `esw_notifications_total`, `esw_graph_requests_total`,
+  `esw_last_scan_duration_seconds`, `esw_process_start_time_seconds`) and a second Grafana dashboard dedicated to
+  the health of the application (restarts, scans, Graph calls, notification delivery, errors).
+
+### Changed
+- A rejected webhook call now reports the response body of the receiver in the error (for example Jira's
+  `Missing token`), instead of only the status code.
+
 ## [0.6.0] - 2026-10-22
 
 ### Changed
