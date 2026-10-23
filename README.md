@@ -5,6 +5,9 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 [![CI](https://github.com/YOUR_USERNAME/entra-secret-watcher/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/entra-secret-watcher/actions/workflows/ci.yml)
 
+> 🦀 **A new version of this project, written in Rust, is available:**
+> [jerome-duchene/entra-secret-watcher-rust](https://github.com/jerome-duchene/entra-secret-watcher-rust).
+
 A lightweight, self-hosted Docker container that monitors **Microsoft Entra ID** (Azure AD) app registration **secrets and certificates** for expiration, and sends proactive notifications before they expire.
 
 **One container per tenant** — deploy as many as you need, configure everything via environment variables.
