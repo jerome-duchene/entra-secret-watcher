@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using EntraSecretWatcher.Configuration;
+using EntraSecretWatcher.Models;
 using EntraSecretWatcher.Services;
 using EntraSecretWatcher.Services.Notifications;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,16 @@ internal class CredentialScanJob(
 
         try
         {
-            var result = await _scanner.ScanAsync();
+            var started = Stopwatch.GetTimestamp();
+            ScanResult result;
+            try
+            {
+                result = await _scanner.ScanAsync();
+            }
+            finally
+            {
+                _metrics.RecordScanDuration(Stopwatch.GetElapsedTime(started));
+            }
             _metrics.RecordSuccess(result);
 
             activity?.SetTag("scan.credentials_found", result.Credentials.Count);

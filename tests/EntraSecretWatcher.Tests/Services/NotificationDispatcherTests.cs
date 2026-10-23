@@ -199,6 +199,33 @@ public class NotificationDispatcherTests
         await channel2.Received(2).SendAsync(Arg.Any<ScanResult>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task DispatchAsync_CountsEachAttemptPerChannelAndResult()
+    {
+        var registry = new Prometheus.CollectorRegistry();
+        using var metrics = new EntraSecretWatcher.Services.ScanMetrics($"test-{Guid.NewGuid()}", registry, "Test", "test-id");
+        var failing = Substitute.For<INotificationChannel>();
+        var succeeding = Substitute.For<INotificationChannel>();
+        failing.IsEnabled.Returns(true);
+        failing.Name.Returns("Webhook");
+        failing.SendAsync(Arg.Any<ScanResult>(), Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("boom"));
+        succeeding.IsEnabled.Returns(true);
+        succeeding.Name.Returns("Gotify");
+        var dispatcher = new NotificationDispatcher(
+            [failing, succeeding],
+            Options.Create(new WatcherOptions { GroupedReport = true }),
+            Substitute.For<ILogger<NotificationDispatcher>>(),
+            metrics);
+
+        await dispatcher.DispatchAsync(_scanResult);
+
+        using var stream = new MemoryStream();
+        await registry.CollectAndExportAsTextAsync(stream, TestContext.Current.CancellationToken);
+        var output = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        output.Should().MatchRegex("esw_notifications_total\\{channel=\"Webhook\",result=\"failure\"[^}]*\\} 1");
+        output.Should().MatchRegex("esw_notifications_total\\{channel=\"Gotify\",result=\"success\"[^}]*\\} 1");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static NotificationDispatcher CreateDispatcher(params INotificationChannel[] channels) =>

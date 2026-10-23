@@ -1,5 +1,6 @@
 using EntraSecretWatcher.Configuration;
 using EntraSecretWatcher.Models;
+using EntraSecretWatcher.Services;
 using EntraSecretWatcher.Services.Notifications.Channels;
 using Microsoft.Extensions.Options;
 
@@ -8,11 +9,21 @@ namespace EntraSecretWatcher.Services.Notifications;
 internal class NotificationDispatcher(
     IEnumerable<INotificationChannel> channels,
     IOptions<WatcherOptions> options,
-    ILogger<NotificationDispatcher> logger)
+    ILogger<NotificationDispatcher> logger,
+    ScanMetrics? metrics)
 {
+    public NotificationDispatcher(
+        IEnumerable<INotificationChannel> channels,
+        IOptions<WatcherOptions> options,
+        ILogger<NotificationDispatcher> logger)
+        : this(channels, options, logger, null)
+    {
+    }
+
     private readonly IEnumerable<INotificationChannel> _channels = channels;
     private readonly WatcherOptions _options = options.Value;
     private readonly ILogger<NotificationDispatcher> _logger = logger;
+    private readonly ScanMetrics? _metrics = metrics;
 
     public virtual async Task DispatchAsync(ScanResult result, CancellationToken ct = default)
     {
@@ -36,10 +47,12 @@ internal class NotificationDispatcher(
                 {
                     _logger.LogInformation("Sending notification via {Channel}", channel.Name);
                     await channel.SendAsync(batch, ct);
+                    _metrics?.CountNotification(channel.Name, success: true);
                     _logger.LogInformation("Notification sent successfully via {Channel}", channel.Name);
                 }
                 catch (Exception ex)
                 {
+                    _metrics?.CountNotification(channel.Name, success: false);
                     _logger.LogError(ex, "Failed to send notification via {Channel}", channel.Name);
                 }
             }

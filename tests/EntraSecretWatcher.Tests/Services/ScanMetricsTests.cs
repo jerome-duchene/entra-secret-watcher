@@ -158,6 +158,80 @@ public class ScanMetricsTests
         AssertSample(output, "esw_credentials_expiring_soon", "1");
     }
 
+    [Fact]
+    public async Task PrometheusEndpoint_PublishesApplicationHealthMetrics()
+    {
+        var registry = new CollectorRegistry();
+        using var metrics = NewMetrics(registry);
+
+        metrics.RecordSuccess(CreateResult());
+        metrics.RecordFailure();
+        metrics.CountNotification("Webhook", success: false);
+        metrics.CountGraphRequest(success: true);
+        metrics.RecordScanDuration(TimeSpan.FromSeconds(1.5));
+
+        var output = await ScrapeAsync(registry);
+        AssertSample(output, "esw_scans_total", "1", "result=\"success\"");
+        AssertSample(output, "esw_scans_total", "1", "result=\"failure\"");
+        AssertSample(output, "esw_notifications_total", "1", "channel=\"Webhook\"", "result=\"failure\"");
+        AssertSample(output, "esw_graph_requests_total", "1", "result=\"success\"");
+        AssertSample(output, "esw_last_scan_duration_seconds", "1.5");
+        output.Should().MatchRegex(@"(?m)^esw_process_start_time_seconds\{");
+        output.Should().Contain("# TYPE esw_scans_total counter");
+    }
+
+    [Fact]
+    public async Task PrometheusEndpoint_BeforeAnyEvent_PublishesNoCounterAndNoDuration()
+    {
+        var registry = new CollectorRegistry();
+        using var metrics = NewMetrics(registry);
+
+        var output = await ScrapeAsync(registry);
+
+        output.Should().NotMatchRegex(@"(?m)^esw_(scans|notifications|graph_requests)_total[ {]");
+        output.Should().NotMatchRegex(@"(?m)^esw_last_scan_duration_seconds[ {]");
+    }
+
+    [Fact]
+    public void Counters_ArePushedWithTheirLabelsAndTheTenant()
+    {
+        using var metrics = NewMetrics();
+        var items = new List<(string Name, long Value, Dictionary<string, object?> Tags)>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (ReferenceEquals(instrument.Meter, metrics.Meter))
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((i, v, tags, _) => items.Add((i.Name, v, ToDictionary(tags))));
+        listener.Start();
+
+        metrics.CountNotification("Teams", success: true);
+        metrics.CountGraphRequest(success: false);
+        metrics.RecordFailure();
+
+        var notification = items.Single(i => i.Name == "esw_notifications_total");
+        notification.Value.Should().Be(1);
+        notification.Tags["channel"].Should().Be("Teams");
+        notification.Tags["result"].Should().Be("success");
+        notification.Tags["tenant_name"].Should().Be("Contoso");
+        items.Single(i => i.Name == "esw_graph_requests_total").Tags["result"].Should().Be("failure");
+        items.Single(i => i.Name == "esw_scans_total").Tags["result"].Should().Be("failure");
+    }
+
+    [Fact]
+    public void ScanDuration_IsObservedInSecondsOnceRecorded()
+    {
+        using var metrics = NewMetrics();
+        Observe(metrics).All("esw_last_scan_duration_seconds").Should().BeEmpty();
+
+        metrics.RecordScanDuration(TimeSpan.FromMilliseconds(2500));
+
+        Observe(metrics).Single("esw_last_scan_duration_seconds").Value.Should().Be(2.5);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ScanMetrics NewMetrics(CollectorRegistry? registry = null) =>

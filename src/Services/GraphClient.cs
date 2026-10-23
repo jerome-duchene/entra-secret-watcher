@@ -10,8 +10,13 @@ namespace EntraSecretWatcher.Services;
 /// Minimal Microsoft Graph client (client-credentials flow over plain HTTP) covering the two calls we need.
 /// No retry handler on purpose: SendMail is not idempotent, a retry could send a duplicate email.
 /// </summary>
-internal class GraphClient(HttpClient http, IOptions<EntraOptions> options)
+internal class GraphClient(HttpClient http, IOptions<EntraOptions> options, ScanMetrics? metrics)
 {
+    public GraphClient(HttpClient http, IOptions<EntraOptions> options)
+        : this(http, options, null)
+    {
+    }
+
     private const string BaseUrl = "https://graph.microsoft.com/v1.0";
     private readonly EntraOptions _entra = options.Value;
 
@@ -40,7 +45,23 @@ internal class GraphClient(HttpClient http, IOptions<EntraOptions> options)
             saveToSentItems = false
         }, ct);
 
+    // Every Graph call is counted per result; a failed token acquisition counts as a failed call
     private async Task<T?> SendAsync<T>(HttpMethod method, string url, object? body, CancellationToken ct)
+    {
+        try
+        {
+            var result = await SendCoreAsync<T>(method, url, body, ct);
+            metrics?.CountGraphRequest(success: true);
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            metrics?.CountGraphRequest(success: false);
+            throw;
+        }
+    }
+
+    private async Task<T?> SendCoreAsync<T>(HttpMethod method, string url, object? body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(ct));

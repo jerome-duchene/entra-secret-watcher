@@ -18,6 +18,7 @@ internal class WebhookNotificationChannel(
     : INotificationChannel
 {
     internal const string EventName = "credential.expiring";
+    private const int MaxErrorBodyLength = 500;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -52,7 +53,14 @@ internal class WebhookNotificationChannel(
                     request.Headers.TryAddWithoutValidation(_options.SecretHeaderName, _options.Secret);
 
                 using var response = await client.SendAsync(request, ct);
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                {
+                    // The receiver usually explains a rejection in the body, which EnsureSuccessStatusCode would drop
+                    var body = await response.Content.ReadAsStringAsync(ct);
+                    throw new HttpRequestException(
+                        $"HTTP status {(int)response.StatusCode} {response.ReasonPhrase} for url ({_options.Url}): " +
+                        (body.Length > MaxErrorBodyLength ? body[..MaxErrorBodyLength] : body));
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -49,6 +49,17 @@ internal sealed class ScanMetrics : IDisposable
     private readonly Gauge _promLastScanSuccess;
     private readonly List<string[]> _promReportedLabels = [];
 
+    // Application health, independent from the credentials
+    private readonly Counter<long> _scans;
+    private readonly Counter<long> _notifications;
+    private readonly Counter<long> _graphRequests;
+    private readonly Prometheus.Counter _promScans;
+    private readonly Prometheus.Counter _promNotifications;
+    private readonly Prometheus.Counter _promGraphRequests;
+    private readonly Gauge _promLastScanDuration;
+    private readonly long _startedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    private long _lastScanDurationTicks = -1;
+
     private readonly KeyValuePair<string, object?>[] _tenantTags;
 
     public ScanMetrics(IOptions<EntraOptions> entraOptions)
@@ -92,6 +103,23 @@ internal sealed class ScanMetrics : IDisposable
             ObserveLastScanSuccess,
             description: "1 if the last scan succeeded, 0 otherwise.");
 
+        _scans = Meter.CreateCounter<long>(
+            "esw_scans_total", description: "Scans run since the process started, by result.");
+        _notifications = Meter.CreateCounter<long>(
+            "esw_notifications_total",
+            description: "Notifications attempted since the process started, by channel and result.");
+        _graphRequests = Meter.CreateCounter<long>(
+            "esw_graph_requests_total",
+            description: "Microsoft Graph calls made since the process started, by result.");
+        Meter.CreateObservableGauge(
+            "esw_last_scan_duration_seconds",
+            ObserveLastScanDuration,
+            description: "Duration of the last scan attempt, in seconds.");
+        Meter.CreateObservableGauge(
+            "esw_process_start_time_seconds",
+            () => new Measurement<long>(_startedAt, _tenantTags),
+            description: "Unix timestamp of the start of the process.");
+
         // ── prometheus-net (/metrics) ──
         var factory = Metrics
             .WithCustomRegistry(registry)
@@ -125,12 +153,63 @@ internal sealed class ScanMetrics : IDisposable
             "esw_last_scan_success",
             "1 if the last scan succeeded, 0 otherwise.",
             NoInitialValue);
+
+        // A counter series only appears with its first event
+        _promScans = factory.CreateCounter(
+            "esw_scans_total",
+            "Scans run since the process started, by result.",
+            new CounterConfiguration { LabelNames = ["result"], SuppressInitialValue = true });
+        _promNotifications = factory.CreateCounter(
+            "esw_notifications_total",
+            "Notifications attempted since the process started, by channel and result.",
+            new CounterConfiguration { LabelNames = ["channel", "result"], SuppressInitialValue = true });
+        _promGraphRequests = factory.CreateCounter(
+            "esw_graph_requests_total",
+            "Microsoft Graph calls made since the process started, by result.",
+            new CounterConfiguration { LabelNames = ["result"], SuppressInitialValue = true });
+        _promLastScanDuration = factory.CreateGauge(
+            "esw_last_scan_duration_seconds",
+            "Duration of the last scan attempt, in seconds.",
+            NoInitialValue);
+        factory.CreateGauge(
+                "esw_process_start_time_seconds",
+                "Unix timestamp of the start of the process.")
+            .Set(_startedAt);
     }
 
     internal Meter Meter { get; }
 
+    public void CountNotification(string channel, bool success)
+    {
+        _notifications.Add(1, Tag("channel", channel), Tag("result", ResultOf(success)), _tenantTags[0], _tenantTags[1]);
+        _promNotifications.WithLabels(channel, ResultOf(success)).Inc();
+    }
+
+    public void CountGraphRequest(bool success)
+    {
+        _graphRequests.Add(1, Tag("result", ResultOf(success)), _tenantTags[0], _tenantTags[1]);
+        _promGraphRequests.WithLabels(ResultOf(success)).Inc();
+    }
+
+    public void RecordScanDuration(TimeSpan duration)
+    {
+        Volatile.Write(ref _lastScanDurationTicks, duration.Ticks);
+        _promLastScanDuration.Set(duration.TotalSeconds);
+    }
+
+    private void CountScan(bool success)
+    {
+        _scans.Add(1, Tag("result", ResultOf(success)), _tenantTags[0], _tenantTags[1]);
+        _promScans.WithLabels(ResultOf(success)).Inc();
+    }
+
+    private static string ResultOf(bool success) => success ? "success" : "failure";
+
+    private static KeyValuePair<string, object?> Tag(string key, string value) => new(key, value);
+
     public void RecordSuccess(ScanResult result)
     {
+        CountScan(true);
         lock (_writeLock)
         {
             _snapshot = new Snapshot(
@@ -164,6 +243,7 @@ internal sealed class ScanMetrics : IDisposable
 
     public void RecordFailure()
     {
+        CountScan(false);
         lock (_writeLock)
         {
             // Keep the figures of the last successful scan, only flag the failure
@@ -189,6 +269,13 @@ internal sealed class ScanMetrics : IDisposable
         if (snapshot.LastScanSuccess is null || (requireResult && !snapshot.HasResult))
             yield break;
         yield return new Measurement<T>(read(snapshot), _tenantTags);
+    }
+
+    private IEnumerable<Measurement<double>> ObserveLastScanDuration()
+    {
+        var ticks = Volatile.Read(ref _lastScanDurationTicks);
+        if (ticks >= 0)
+            yield return new Measurement<double>(TimeSpan.FromTicks(ticks).TotalSeconds, _tenantTags);
     }
 
     private IEnumerable<Measurement<int>> ObserveLastScanSuccess()

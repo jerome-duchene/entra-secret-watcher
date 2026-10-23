@@ -70,6 +70,19 @@ public class WebhookNotificationChannelTests
     }
 
     [Fact]
+    public async Task SendAsync_RejectedCall_ReportsTheResponseBodyOfTheReceiver()
+    {
+        var handler = new RecordingHandler(failOnCall: 0, failureBody: "{\"errorMessages\":[\"Missing token\"]}");
+        var channel = CreateChannel(handler, new WebhookOptions { Enabled = true, Url = "https://example.com/hook" });
+
+        var act = () => channel.SendAsync(ScanResultWith(Credential("a", 5)));
+
+        var thrown = await act.Should().ThrowAsync<AggregateException>();
+        thrown.Which.InnerExceptions.Single().Message
+            .Should().Contain("500").And.Contain("https://example.com/hook").And.Contain("Missing token");
+    }
+
+    [Fact]
     public void IsEnabled_ReflectsOptions()
     {
         var handler = new RecordingHandler();
@@ -109,7 +122,7 @@ public class WebhookNotificationChannelTests
         Credentials = credentials.ToList().AsReadOnly()
     };
 
-    private sealed class RecordingHandler(int? failOnCall = null) : HttpMessageHandler
+    private sealed class RecordingHandler(int? failOnCall = null, string failureBody = "") : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];
         public List<string> Bodies { get; } = [];
@@ -118,9 +131,9 @@ public class WebhookNotificationChannelTests
         {
             Requests.Add(request);
             Bodies.Add(await request.Content!.ReadAsStringAsync(ct));
-            return new HttpResponseMessage(Requests.Count - 1 == failOnCall
-                ? HttpStatusCode.InternalServerError
-                : HttpStatusCode.OK);
+            return Requests.Count - 1 == failOnCall
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent(failureBody) }
+                : new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
 }
