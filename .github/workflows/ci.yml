@@ -91,6 +91,8 @@ jobs:
             if docker buildx build \
                 --platform linux/amd64,linux/arm64 \
                 --push \
+                --pull \
+                --no-cache-filter runtime \
                 "${build_flags[@]}" \
                 --cache-from type=gha \
                 --cache-to type=gha,mode=max \

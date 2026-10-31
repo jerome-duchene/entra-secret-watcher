@@ -12,6 +12,9 @@ RUN dotnet publish -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine-composite AS runtime
 WORKDIR /app
 
+# Pull the latest security fixes for the installed packages (base image may lag behind)
+RUN apk upgrade --no-cache
+
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
