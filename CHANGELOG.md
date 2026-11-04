@@ -12,6 +12,14 @@ uses [Semantic Versioning](https://semver.org/).
   the health of the application (restarts, scans, Graph calls, notification delivery, errors).
 
 ### Changed
+- The startup scan (`Watcher__RunOnStartup`) is retried with an exponential backoff (5 s doubling, capped at 60 s,
+  8 retries) when it fails, for example because DNS is not ready yet right after a container start.
+- Connection errors (DNS resolution, refused connection) on Graph and token requests are retried with a backoff
+  (4 retries, 2 s to 30 s). This is safe for `sendMail` because the request never left; timeouts and HTTP errors
+  are still not retried, so no duplicate email can be sent.
+- Updated all dependencies (OpenTelemetry 1.20.1; test stack: xunit.v3 4.0.2, NSubstitute 6, FluentAssertions 8.11,
+  Microsoft.NET.Test.Sdk 18.11). The tests now run on Microsoft.Testing.Platform (`global.json`): use
+  `dotnet test --filter-not-trait "Category=Integration"` instead of `--filter`.
 - A rejected webhook call now reports the response body of the receiver in the error (for example Jira's
   `Missing token`), instead of only the status code.
 

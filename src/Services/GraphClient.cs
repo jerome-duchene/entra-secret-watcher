@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EntraSecretWatcher.Configuration;
@@ -8,14 +8,19 @@ namespace EntraSecretWatcher.Services;
 
 /// <summary>
 /// Minimal Microsoft Graph client (client-credentials flow over plain HTTP) covering the two calls we need.
-/// No retry handler on purpose: SendMail is not idempotent, a retry could send a duplicate email.
+/// Only connection errors (DNS resolution, refused/unreachable connection) are retried, with a backoff: the request
+/// never reached the server, so retrying is safe even for SendMail, which is not idempotent. Anything that may have
+/// been received (timeout, HTTP error) is not retried, to avoid sending a duplicate email.
 /// </summary>
-internal class GraphClient(HttpClient http, IOptions<EntraOptions> options, ScanMetrics? metrics)
+internal class GraphClient(HttpClient http, IOptions<EntraOptions> options, ScanMetrics? metrics, ILogger<GraphClient>? logger)
 {
     public GraphClient(HttpClient http, IOptions<EntraOptions> options)
-        : this(http, options, null)
+        : this(http, options, null, null)
     {
     }
+
+    /// <summary>Backoff applied to connection errors.</summary>
+    internal RetryPolicy Backoff { get; init; } = RetryPolicy.Graph;
 
     private const string BaseUrl = "https://graph.microsoft.com/v1.0";
     private readonly EntraOptions _entra = options.Value;
@@ -63,12 +68,16 @@ internal class GraphClient(HttpClient http, IOptions<EntraOptions> options, Scan
 
     private async Task<T?> SendCoreAsync<T>(HttpMethod method, string url, object? body, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(ct));
-        if (body is not null)
-            request.Content = JsonContent.Create(body);
+        var token = await GetTokenAsync(ct);
 
-        using var response = await http.SendAsync(request, ct);
+        using var response = await Retry.ExecuteAsync("Graph request", Backoff, Retry.IsConnectionError, async () =>
+        {
+            using var request = new HttpRequestMessage(method, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (body is not null)
+                request.Content = JsonContent.Create(body);
+            return await http.SendAsync(request, ct);
+        }, logger, ct);
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException($"Graph {method} failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(ct)}");
 
@@ -77,15 +86,16 @@ internal class GraphClient(HttpClient http, IOptions<EntraOptions> options, Scan
 
     private async Task<string> GetTokenAsync(CancellationToken ct)
     {
-        using var response = await http.PostAsync(
-            $"https://login.microsoftonline.com/{Uri.EscapeDataString(_entra.TenantId)}/oauth2/v2.0/token",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "client_credentials",
-                ["client_id"] = _entra.ClientId,
-                ["client_secret"] = _entra.ClientSecret,
-                ["scope"] = "https://graph.microsoft.com/.default"
-            }), ct);
+        using var response = await Retry.ExecuteAsync("Token request", Backoff, Retry.IsConnectionError, () =>
+            http.PostAsync(
+                $"https://login.microsoftonline.com/{Uri.EscapeDataString(_entra.TenantId)}/oauth2/v2.0/token",
+                new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["grant_type"] = "client_credentials",
+                    ["client_id"] = _entra.ClientId,
+                    ["client_secret"] = _entra.ClientSecret,
+                    ["scope"] = "https://graph.microsoft.com/.default"
+                }), ct), logger, ct);
 
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException($"Token request failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(ct)}");

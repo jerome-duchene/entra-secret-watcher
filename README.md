@@ -440,10 +440,10 @@ All detected credentials will be logged to stdout — useful for validating perm
 
 ```bash
 # Unit tests only (fast, no credentials needed)
-dotnet test --filter "Category!=Integration"
+dotnet test --filter-not-trait "Category=Integration"
 
 # Integration tests (requires real credentials — see below)
-dotnet test --filter "Category=Integration"
+dotnet test --filter-trait "Category=Integration"
 ```
 
 Integration tests connect to real external services (Entra ID, Gotify, Teams, email). Configure

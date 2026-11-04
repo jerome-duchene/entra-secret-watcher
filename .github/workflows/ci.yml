@@ -30,8 +30,8 @@ jobs:
         run: >
           dotnet test EntraSecretWatcher.sln
           --no-build -c Release
-          --filter "Category!=Integration"
-          --logger "trx;LogFileName=test-results.trx"
+          --filter-not-trait "Category=Integration"
+          --report-trx --report-trx-filename test-results.trx
 
       - name: Upload test results
         if: always()
